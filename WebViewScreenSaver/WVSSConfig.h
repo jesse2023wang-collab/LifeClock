@@ -29,14 +29,12 @@
 @property(nonatomic, strong) NSString *addressListURL;
 @property(nonatomic, assign) BOOL shouldFetchAddressList;
 
-@property(nonatomic, strong) NSString *timeFormat;
 @property(nonatomic, strong) NSDate *birthDate;
 @property(nonatomic, assign) CGFloat scale;
 @property(nonatomic, assign) CGFloat brightness;
-@property(nonatomic, assign) BOOL showBackground;
-@property(nonatomic, assign) BOOL multiMonitor;
 
 - (instancetype)initWithUserDefaults:(NSUserDefaults *)userDefaults;
 - (void)synchronize;
+- (void)addAddressWithURL:(NSString *)url duration:(NSInteger)duration;
 
 @end

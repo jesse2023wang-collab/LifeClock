@@ -36,6 +36,8 @@ static NSString *const kTableColumnPreview = @"preview";
 @interface WVSSConfigController () <WVSSAddressListFetcherDelegate, WKNavigationDelegate, NSWindowDelegate>
 @property(nonatomic, strong) WVSSConfig *config;
 @property(nonatomic, strong) WKWebView *previewWebView;
+@property(nonatomic, strong) NSTextField *scaleValueLabel;
+@property(nonatomic, strong) NSTextField *brightnessValueLabel;
 @end
 
 @implementation WVSSConfigController
@@ -55,8 +57,6 @@ static NSString *const kTableColumnPreview = @"preview";
 - (void)synchronize {
   self.config.addressListURL = self.urlsURLField.stringValue;
   
-  self.config.timeFormat = self.timeFormatPopup.selectedItem.title;
-  
   // 只保留年月日，时分秒固定为 00:00:00
   NSCalendar *calendar = [NSCalendar currentCalendar];
   NSDateComponents *components = [calendar components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond) fromDate:self.birthDatePicker.dateValue];
@@ -67,8 +67,6 @@ static NSString *const kTableColumnPreview = @"preview";
   
   self.config.scale = self.scaleSlider.floatValue;
   self.config.brightness = self.brightnessSlider.floatValue;
-  self.config.showBackground = self.showBackgroundCheckbox.state == NSControlStateValueOn;
-  self.config.multiMonitor = self.multiMonitorCheckbox.state == NSControlStateValueOn;
   
   [self.config synchronize];
 }
@@ -144,6 +142,54 @@ static NSString *const kTableColumnPreview = @"preview";
                                          }];
 }
 
+- (IBAction)resetToDefaults:(id)sender {
+  NSAlert *alert = [[NSAlert alloc] init];
+  [alert setMessageText:@"恢复默认设置"];
+  [alert setInformativeText:@"此操作将重置所有设置为出厂默认值，包括出生日期、缩放、亮度以及设备地址列表。"];
+  [alert setIcon:[NSImage imageNamed:NSImageNameCaution]];
+  [alert addButtonWithTitle:@"恢复默认"];
+  [alert addButtonWithTitle:@"取消"];
+  [alert setAlertStyle:NSAlertStyleWarning];
+  [alert beginSheetModalForWindow:self.sheet
+                completionHandler:^(NSModalResponse returnCode) {
+                  if (returnCode == NSAlertFirstButtonReturn) {
+                    [self performResetToDefaults];
+                  }
+                }];
+}
+
+- (void)performResetToDefaults {
+  // 重置地址列表为默认
+  [self.config.addresses removeAllObjects];
+  [self.config addAddressWithURL:[WVSSAddress defaultAddressURL] duration:[WVSSAddress defaultDuration]];
+  [self.urlTable reloadData];
+  
+  // 重置日期为 2000-01-01
+  NSCalendar *calendar = [NSCalendar currentCalendar];
+  NSDateComponents *components = [[NSDateComponents alloc] init];
+  components.year = 2000;
+  components.month = 1;
+  components.day = 1;
+  components.hour = 0;
+  components.minute = 0;
+  components.second = 0;
+  NSDate *defaultDate = [calendar dateFromComponents:components];
+  [self.birthDatePicker setDateValue:defaultDate];
+  
+  // 重置缩放为 0.7
+  [self.scaleSlider setFloatValue:0.7];
+  
+  // 重置亮度为 0.3
+  [self.brightnessSlider setFloatValue:0.3];
+  
+  // 更新数值标签
+  self.scaleValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", 0.7];
+  self.brightnessValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", 0.3];
+  
+  // 刷新预览
+  [self refreshPreview];
+}
+
 #pragma mark -
 
 - (void)addressListFetcher:(WVSSAddressListFetcher *)fetcher didFailWithError:(NSError *)error {
@@ -205,26 +251,19 @@ static NSString *const kTableColumnPreview = @"preview";
   self.sheet.releasedWhenClosed = NO;
   self.sheetContents = self.sheet.contentView;
   self.sheet.delegate = self;
+  self.sheet.backgroundColor = [NSColor colorWithCalibratedWhite:0.12 alpha:1.0];
 }
 
 - (void)initializeControlValues {
-  [self.timeFormatPopup removeAllItems];
-  [self.timeFormatPopup addItemsWithTitles:@[@"00-23", @"01-12"]];
-  if ([self.timeFormatPopup.itemTitles containsObject:self.config.timeFormat]) {
-    [self.timeFormatPopup selectItemWithTitle:self.config.timeFormat];
-  } else {
-    [self.timeFormatPopup selectItemWithTitle:@"00-23"];
-  }
-
   [self.birthDatePicker setDateValue:self.config.birthDate];
   [self.birthDatePicker setTimeZone:[NSTimeZone localTimeZone]];
 
   [self.scaleSlider setFloatValue:self.config.scale];
   [self.brightnessSlider setFloatValue:self.config.brightness];
 
-  [self.showBackgroundCheckbox setState:self.config.showBackground ? NSControlStateValueOn : NSControlStateValueOff];
-  [self.multiMonitorCheckbox setState:self.config.multiMonitor ? NSControlStateValueOn : NSControlStateValueOff];
-  
+  self.scaleValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", self.config.scale];
+  self.brightnessValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", self.config.brightness];
+
   // 初始预览刷新（页面加载完成后的注入由 didFinishNavigation 回调处理）
   [self refreshPreview];
 }
@@ -248,27 +287,26 @@ static NSString *const kTableColumnPreview = @"preview";
   NSDate *previewBirthDate = [calendar dateFromComponents:components];
   NSString *birthDateStr = [formatter stringFromDate:previewBirthDate];
   
-  NSString *timeFormat = self.timeFormatPopup.selectedItem.title;
   CGFloat scale = self.scaleSlider.floatValue;
   CGFloat brightness = self.brightnessSlider.floatValue;
-  BOOL showBackground = self.showBackgroundCheckbox.state == NSControlStateValueOn;
-  BOOL multiMonitor = self.multiMonitorCheckbox.state == NSControlStateValueOn;
-  
+
+  // 传入预览 WebView 的尺寸，让 HTML 据此计算预览缩放
+  CGFloat previewW = self.previewWebView.frame.size.width;
+  CGFloat previewH = self.previewWebView.frame.size.height;
+
   NSString *script = [NSString stringWithFormat:
     @"window.reconfigureScreenSaver({"
-    "  timeFormat: '%@',"
     "  birthDate: new Date('%@'),"
     "  scale: %f,"
     "  brightness: %f,"
-    "  showBackground: %d,"
-    "  multiMonitor: %d"
+    "  screenWidth: %f,"
+    "  screenHeight: %f"
     "});",
-    timeFormat,
     birthDateStr,
     scale,
     brightness,
-    (int)showBackground,
-    (int)multiMonitor];
+    previewW,
+    previewH];
   
   [self.previewWebView evaluateJavaScript:script completionHandler:^(id _Nullable result, NSError * _Nullable error) {
     if (error) {
@@ -278,6 +316,8 @@ static NSString *const kTableColumnPreview = @"preview";
 }
 
 - (IBAction)controlChanged:(id)sender {
+  self.scaleValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", self.scaleSlider.floatValue];
+  self.brightnessValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", self.brightnessSlider.floatValue];
   [self refreshPreview];
 }
 
@@ -299,18 +339,19 @@ static NSString *const kTableColumnPreview = @"preview";
   CGFloat controlWidth = windowWidth - paddingX - labelWidth - 12;
   CGFloat rowHeight = 24;
   CGFloat hintHeight = 14;
-  CGFloat sectionGap = 8;
-  CGFloat itemGap = 2;
+  CGFloat sectionGap = 26;
+  CGFloat itemGap = 4;
 
-  // 固定预览框为 384×216（16:9），与锁屏全屏比例一致
-  CGFloat previewWidth = 384;
-  CGFloat previewHeight = 216;
-
+  // 预览框：使用可用宽度，保持 16:9 比例
+  CGFloat previewWidth = windowWidth - paddingX * 2;
+  CGFloat previewHeight = previewWidth * 9.0 / 16.0;
   CGFloat previewX = (windowWidth - previewWidth) / 2.0;
 
   CGFloat currentY = windowHeight - 30;
 
-  // --- 实时预览区域 ---
+  // ═══════════════════════════════════════
+  // 实时预览
+  // ═══════════════════════════════════════
   currentY -= 22;
   NSTextField *previewTitle = [[NSTextField alloc] initWithFrame:NSMakeRect(previewX, currentY, 120, 22)];
   previewTitle.stringValue = @"实时预览";
@@ -323,11 +364,12 @@ static NSString *const kTableColumnPreview = @"preview";
   [containerView addSubview:previewTitle];
 
   currentY -= 4;
+
   self.previewWebView = [[WKWebView alloc] initWithFrame:NSMakeRect(previewX, currentY - previewHeight, previewWidth, previewHeight)];
-  self.previewWebView.layer.cornerRadius = 4;
+  self.previewWebView.layer.cornerRadius = 8;
   self.previewWebView.layer.masksToBounds = YES;
   self.previewWebView.layer.borderWidth = 1;
-  self.previewWebView.layer.borderColor = [NSColor colorWithCalibratedWhite:0.3 alpha:1.0].CGColor;
+  self.previewWebView.layer.borderColor = [NSColor colorWithCalibratedWhite:0.25 alpha:1.0].CGColor;
   self.previewWebView.navigationDelegate = self;
   self.previewWebView.autoresizingMask = NSViewWidthSizable;
   [self.previewWebView setValue:@(YES) forKey:@"drawsTransparentBackground"];
@@ -344,57 +386,47 @@ static NSString *const kTableColumnPreview = @"preview";
   currentY -= (previewHeight + 4);
   currentY -= sectionGap;
 
-  // --- Time Format ---
-  currentY -= rowHeight;
-  NSTextField *timeFormatLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, currentY, labelWidth, rowHeight)];
-  timeFormatLabel.stringValue = @"时间格式";
-  timeFormatLabel.font = [NSFont systemFontOfSize:13];
-  timeFormatLabel.alignment = NSTextAlignmentRight;
-  timeFormatLabel.bezeled = NO;
-  timeFormatLabel.drawsBackground = NO;
-  timeFormatLabel.editable = NO;
-  timeFormatLabel.selectable = NO;
-  [containerView addSubview:timeFormatLabel];
-
-  self.timeFormatPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, 100, rowHeight)];
-  [self.timeFormatPopup addItemsWithTitles:@[@"00-23", @"01-12"]];
-  [containerView addSubview:self.timeFormatPopup];
-
-  currentY -= (hintHeight + itemGap);
-  NSTextField *timeFormatHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, controlWidth, hintHeight)];
-  timeFormatHint.stringValue = @"24 小时制 或 12 小时制";
-  timeFormatHint.font = [NSFont systemFontOfSize:10];
-  timeFormatHint.textColor = [NSColor colorWithCalibratedWhite:0.45 alpha:1.0];
-  timeFormatHint.bezeled = NO;
-  timeFormatHint.drawsBackground = NO;
-  timeFormatHint.editable = NO;
-  timeFormatHint.selectable = NO;
-  [containerView addSubview:timeFormatHint];
-
   currentY -= sectionGap;
 
+  // ═══════════════════════════════════════
+  // 设置
+  // ═══════════════════════════════════════
+  NSBox *settingsSeparator = [[NSBox alloc] initWithFrame:NSMakeRect(paddingX, currentY, windowWidth - paddingX * 2, 1)];
+  settingsSeparator.boxType = NSBoxSeparator;
+  settingsSeparator.autoresizingMask = NSViewWidthSizable;
+  [containerView addSubview:settingsSeparator];
+
+  currentY -= 20;
+  // 删除版本号标签，留空一行保持间距
+  currentY -= (rowHeight + itemGap);
+
   // --- Birth Date ---
-  currentY -= rowHeight;
-  NSTextField *birthDateLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, currentY, labelWidth, rowHeight)];
+  // 左对齐 label + picker 组合
+  CGFloat birthDatePickerWidth = 100;
+
+  NSTextField *birthDateLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, currentY - 2, labelWidth, rowHeight)];
   birthDateLabel.stringValue = @"出生日期";
   birthDateLabel.font = [NSFont systemFontOfSize:13];
-  birthDateLabel.alignment = NSTextAlignmentRight;
+  birthDateLabel.alignment = NSTextAlignmentLeft;
   birthDateLabel.bezeled = NO;
   birthDateLabel.drawsBackground = NO;
   birthDateLabel.editable = NO;
   birthDateLabel.selectable = NO;
   [containerView addSubview:birthDateLabel];
 
-  self.birthDatePicker = [[NSDatePicker alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, 140, rowHeight)];
+  self.birthDatePicker = [[NSDatePicker alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, birthDatePickerWidth, rowHeight)];
   self.birthDatePicker.datePickerStyle = NSDatePickerStyleTextFieldAndStepper;
   self.birthDatePicker.datePickerMode = NSDatePickerModeSingle;
   self.birthDatePicker.datePickerElements = NSDatePickerElementFlagYearMonthDay;
   self.birthDatePicker.timeZone = [NSTimeZone localTimeZone];
+  self.birthDatePicker.textColor = [NSColor controlTextColor];
+  self.birthDatePicker.backgroundColor = [NSColor controlBackgroundColor];
   [containerView addSubview:self.birthDatePicker];
 
   currentY -= (hintHeight + itemGap);
-  NSTextField *birthDateHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, controlWidth, hintHeight)];
-  birthDateHint.stringValue = @"设置出生年月日，时间从 00:00:00 开始计算";
+  CGFloat hintWidth = windowWidth - paddingX - labelWidth - 20;
+  NSTextField *birthDateHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, hintWidth, hintHeight)];
+  birthDateHint.stringValue = @"设置出生日期，用于计算你的实时年龄";
   birthDateHint.font = [NSFont systemFontOfSize:10];
   birthDateHint.textColor = [NSColor colorWithCalibratedWhite:0.45 alpha:1.0];
   birthDateHint.bezeled = NO;
@@ -406,25 +438,36 @@ static NSString *const kTableColumnPreview = @"preview";
   currentY -= sectionGap;
 
   // --- Scale ---
-  currentY -= rowHeight;
-  NSTextField *scaleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, currentY, labelWidth, rowHeight)];
-  scaleLabel.stringValue = @"缩放";
+  // 左对齐 label + slider + 数值 组合
+  CGFloat sliderWidth = 190;
+
+  NSTextField *scaleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, currentY - 2, labelWidth, rowHeight)];
+  scaleLabel.stringValue = @"缩放比例";
   scaleLabel.font = [NSFont systemFontOfSize:13];
-  scaleLabel.alignment = NSTextAlignmentRight;
+  scaleLabel.alignment = NSTextAlignmentLeft;
   scaleLabel.bezeled = NO;
   scaleLabel.drawsBackground = NO;
   scaleLabel.editable = NO;
   scaleLabel.selectable = NO;
   [containerView addSubview:scaleLabel];
 
-  self.scaleSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, controlWidth, rowHeight)];
+  self.scaleSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, sliderWidth, rowHeight)];
   self.scaleSlider.minValue = 0.3;
   self.scaleSlider.maxValue = 1.0;
-  self.scaleSlider.integerValue = NO;
+  self.scaleSlider.allowsTickMarkValuesOnly = NO;
   [containerView addSubview:self.scaleSlider];
 
+  self.scaleValueLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8 + sliderWidth, currentY, 45, rowHeight)];
+  self.scaleValueLabel.font = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightRegular];
+  self.scaleValueLabel.textColor = [NSColor colorWithCalibratedWhite:0.7 alpha:1.0];
+  self.scaleValueLabel.bezeled = NO;
+  self.scaleValueLabel.drawsBackground = NO;
+  self.scaleValueLabel.editable = NO;
+  self.scaleValueLabel.selectable = NO;
+  [containerView addSubview:self.scaleValueLabel];
+
   currentY -= (hintHeight + itemGap);
-  NSTextField *scaleHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, controlWidth, hintHeight)];
+  NSTextField *scaleHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, sliderWidth, hintHeight)];
   scaleHint.stringValue = @"调节时钟显示大小，范围 0.3 ~ 1.0";
   scaleHint.font = [NSFont systemFontOfSize:10];
   scaleHint.textColor = [NSColor colorWithCalibratedWhite:0.45 alpha:1.0];
@@ -437,25 +480,33 @@ static NSString *const kTableColumnPreview = @"preview";
   currentY -= sectionGap;
 
   // --- Brightness ---
-  currentY -= rowHeight;
-  NSTextField *brightnessLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, currentY, labelWidth, rowHeight)];
-  brightnessLabel.stringValue = @"亮度";
+  NSTextField *brightnessLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, currentY - 2, labelWidth, rowHeight)];
+  brightnessLabel.stringValue = @"明暗程度";
   brightnessLabel.font = [NSFont systemFontOfSize:13];
-  brightnessLabel.alignment = NSTextAlignmentRight;
+  brightnessLabel.alignment = NSTextAlignmentLeft;
   brightnessLabel.bezeled = NO;
   brightnessLabel.drawsBackground = NO;
   brightnessLabel.editable = NO;
   brightnessLabel.selectable = NO;
   [containerView addSubview:brightnessLabel];
 
-  self.brightnessSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, controlWidth, rowHeight)];
+  self.brightnessSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, sliderWidth, rowHeight)];
   self.brightnessSlider.minValue = 0.1;
   self.brightnessSlider.maxValue = 1.0;
-  self.brightnessSlider.integerValue = NO;
+  self.brightnessSlider.allowsTickMarkValuesOnly = NO;
   [containerView addSubview:self.brightnessSlider];
 
+  self.brightnessValueLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8 + sliderWidth, currentY, 45, rowHeight)];
+  self.brightnessValueLabel.font = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightRegular];
+  self.brightnessValueLabel.textColor = [NSColor colorWithCalibratedWhite:0.7 alpha:1.0];
+  self.brightnessValueLabel.bezeled = NO;
+  self.brightnessValueLabel.drawsBackground = NO;
+  self.brightnessValueLabel.editable = NO;
+  self.brightnessValueLabel.selectable = NO;
+  [containerView addSubview:self.brightnessValueLabel];
+
   currentY -= (hintHeight + itemGap);
-  NSTextField *brightnessHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, controlWidth, hintHeight)];
+  NSTextField *brightnessHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, sliderWidth, hintHeight)];
   brightnessHint.stringValue = @"调节文字亮度，较低亮度适合暗环境";
   brightnessHint.font = [NSFont systemFontOfSize:10];
   brightnessHint.textColor = [NSColor colorWithCalibratedWhite:0.45 alpha:1.0];
@@ -467,81 +518,56 @@ static NSString *const kTableColumnPreview = @"preview";
 
   currentY -= sectionGap;
 
-  // --- Show Background ---
-  currentY -= rowHeight;
-  self.showBackgroundCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY + 2, 200, rowHeight)];
-  self.showBackgroundCheckbox.buttonType = NSButtonTypeSwitch;
-  self.showBackgroundCheckbox.title = @"显示背景";
-  self.showBackgroundCheckbox.font = [NSFont systemFontOfSize:13];
-  [containerView addSubview:self.showBackgroundCheckbox];
+  // --- 恢复默认按钮 ---
+  NSButton *resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(paddingX, currentY, 0, 24)];
+  resetButton.buttonType = NSButtonTypeMomentaryPushIn;
+  resetButton.bezelStyle = NSBezelStyleSmallSquare;
+  resetButton.title = @"恢复默认";
+  resetButton.target = self;
+  resetButton.action = @selector(resetToDefaults:);
+  [resetButton sizeToFit];
+  resetButton.frame = NSMakeRect(paddingX, currentY, resetButton.frame.size.width, 24);
+  [containerView addSubview:resetButton];
 
-  currentY -= (hintHeight + itemGap);
-  NSTextField *bgHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 36, currentY, controlWidth, hintHeight)];
-  bgHint.stringValue = @"关闭后背景变为透明";
-  bgHint.font = [NSFont systemFontOfSize:10];
-  bgHint.textColor = [NSColor colorWithCalibratedWhite:0.45 alpha:1.0];
-  bgHint.bezeled = NO;
-  bgHint.drawsBackground = NO;
-  bgHint.editable = NO;
-  bgHint.selectable = NO;
-  [containerView addSubview:bgHint];
+  currentY -= 46;
 
-  currentY -= sectionGap;
-
-  // --- Multi Monitor ---
-  currentY -= rowHeight;
-  self.multiMonitorCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY + 2, 200, rowHeight)];
-  self.multiMonitorCheckbox.buttonType = NSButtonTypeSwitch;
-  self.multiMonitorCheckbox.title = @"多显示器显示";
-  self.multiMonitorCheckbox.font = [NSFont systemFontOfSize:13];
-  [containerView addSubview:self.multiMonitorCheckbox];
-
-  currentY -= (hintHeight + itemGap);
-  NSTextField *multiHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 36, currentY, controlWidth, hintHeight)];
-  multiHint.stringValue = @"在所有连接的显示器上同时显示屏保";
-  multiHint.font = [NSFont systemFontOfSize:10];
-  multiHint.textColor = [NSColor colorWithCalibratedWhite:0.45 alpha:1.0];
-  multiHint.bezeled = NO;
-  multiHint.drawsBackground = NO;
-  multiHint.editable = NO;
-  multiHint.selectable = NO;
-  [containerView addSubview:multiHint];
-
-  // 根据实际内容动态调整窗口高度（用 contentSize 避免标题栏偏差）
-  CGFloat finalContentHeight = (windowHeight - currentY) + 50;
-  [self.sheet setContentSize:NSMakeSize(windowWidth, finalContentHeight)];
-
-  // 底部按钮（窗口高度确定后添加，确保始终可见）
+  // 底部按钮
+  CGFloat buttonGap = 12;
   CGFloat buttonY = 12;
-  NSButton *cancelButton = [[NSButton alloc] initWithFrame:NSMakeRect(windowWidth - 170, buttonY, 70, 26)];
+
+  NSButton *cancelButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, buttonY, 0, 24)];
   cancelButton.buttonType = NSButtonTypeMomentaryPushIn;
-  cancelButton.bezelStyle = NSBezelStyleRounded;
+  cancelButton.bezelStyle = NSBezelStyleSmallSquare;
   cancelButton.title = @"取消";
   cancelButton.target = self;
   cancelButton.action = @selector(cancelConfigSheet:);
+  [cancelButton sizeToFit];
+  cancelButton.frame = NSMakeRect(0, buttonY, cancelButton.frame.size.width, 24);
   [containerView addSubview:cancelButton];
 
-  NSButton *okButton = [[NSButton alloc] initWithFrame:NSMakeRect(windowWidth - 90, buttonY, 70, 26)];
+  NSButton *okButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, buttonY, 0, 24)];
   okButton.buttonType = NSButtonTypeMomentaryPushIn;
-  okButton.bezelStyle = NSBezelStyleRounded;
+  okButton.bezelStyle = NSBezelStyleSmallSquare;
   okButton.title = @"确认";
   okButton.target = self;
   okButton.action = @selector(dismissConfigSheet:);
+  [okButton sizeToFit];
+  okButton.frame = NSMakeRect(0, buttonY, okButton.frame.size.width, 24);
   [containerView addSubview:okButton];
 
+  // 居中排列取消 + 确认
+  CGFloat totalButtonsWidth = cancelButton.frame.size.width + buttonGap + okButton.frame.size.width;
+  CGFloat buttonStartX = (windowWidth - totalButtonsWidth) / 2.0;
+  cancelButton.frame = NSMakeRect(buttonStartX, buttonY, cancelButton.frame.size.width, 24);
+  okButton.frame = NSMakeRect(buttonStartX + cancelButton.frame.size.width + buttonGap, buttonY, okButton.frame.size.width, 24);
+
   // 设置控件 target/action，实现实时预览联动
-  self.timeFormatPopup.target = self;
-  self.timeFormatPopup.action = @selector(controlChanged:);
   self.birthDatePicker.target = self;
   self.birthDatePicker.action = @selector(controlChanged:);
   self.scaleSlider.target = self;
   self.scaleSlider.action = @selector(controlChanged:);
   self.brightnessSlider.target = self;
   self.brightnessSlider.action = @selector(controlChanged:);
-  self.showBackgroundCheckbox.target = self;
-  self.showBackgroundCheckbox.action = @selector(controlChanged:);
-  self.multiMonitorCheckbox.target = self;
-  self.multiMonitorCheckbox.action = @selector(controlChanged:);
 }
 
 
@@ -625,7 +651,13 @@ static NSString *const kTableColumnPreview = @"preview";
     dropOperation:(NSTableViewDropOperation)operation {
   NSPasteboard *pboard = [info draggingPasteboard];
   NSData *rowData = [pboard dataForType:kURLTableRow];
-  NSIndexSet *rowIndexes = [NSKeyedUnarchiver unarchivedObjectOfClasses:[NSSet setWithArray:@[[NSIndexSet class], [NSNumber class]]] fromData:rowData error:nil];
+  if (!rowData) return NO;
+  NSError *unarchiveError = nil;
+  NSIndexSet *rowIndexes = [NSKeyedUnarchiver unarchivedObjectOfClasses:[NSSet setWithArray:@[[NSIndexSet class], [NSNumber class]]] fromData:rowData error:&unarchiveError];
+  if (!rowIndexes) {
+    NSLog(@"[LifeClock] 拖拽数据反序列化失败: %@", unarchiveError.localizedDescription);
+    return NO;
+  }
   NSInteger dragRow = [rowIndexes firstIndex];
 
   NSMutableArray *addresses = self.config.addresses;

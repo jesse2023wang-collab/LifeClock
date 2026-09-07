@@ -142,12 +142,53 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   _webView.UIDelegate = self;
   _webView.navigationDelegate = self;
   // Sonoma ScreenSaverEngine view hierarchy occludes webview pausing animations and JS.
-  [_webView wvss_setWindowOcclusionDetectionEnabled: NO];
+  if ([_webView respondsToSelector:@selector(wvss_setWindowOcclusionDetectionEnabled:)]) {
+    [_webView wvss_setWindowOcclusionDetectionEnabled: NO];
+  }
   [self addSubview:_webView];
 
   if (_currentIndex < [[self selectedURLs] count]) {
     [self loadFromStart];
   }
+}
+
+// 当屏幕保护视图被调整大小时（如显示器分辨率变化、外接显示器插拔、合盖唤醒等），
+// 重新注入配置以更新 HTML 中的视口尺寸，确保时钟居中。
+- (void)resizeWithOldSuperviewSize:(NSSize)oldSize {
+  [super resizeWithOldSuperviewSize:oldSize];
+  if (_isPreview || !_webView) return;
+  [self reInjectConfig];
+}
+
+// 构建并注入最新的配置脚本（含更新后的 bounds 尺寸）
+- (void)reInjectConfig {
+  if (!_webView) return;
+  
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+  formatter.timeZone = [NSTimeZone localTimeZone];
+  formatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss";
+  NSString *birthDateStr = [formatter stringFromDate:self.configController.config.birthDate];
+  
+  NSString *script = [NSString stringWithFormat:
+    @"window.reconfigureScreenSaver({"
+    "  birthDate: new Date('%@'),"
+    "  scale: %f,"
+    "  brightness: %f,"
+    "  screenWidth: %f,"
+    "  screenHeight: %f"
+    "});",
+    birthDateStr,
+    self.configController.config.scale,
+    self.configController.config.brightness,
+    self.bounds.size.width,
+    self.bounds.size.height];
+  
+  [_webView evaluateJavaScript:script completionHandler:^(id _Nullable result, NSError * _Nullable error) {
+    if (error) {
+      NSLog(@"[LifeClock] 配置重注入失败: %@", error.localizedDescription);
+    }
+  }];
 }
 
 - (void)stopAnimation {
@@ -169,28 +210,8 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
     if (path) {
         NSURL *baseURL = [NSURL fileURLWithPath:path];
         
-        NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-        formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-        formatter.timeZone = [NSTimeZone localTimeZone];
-        formatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss";
-        NSString *birthDateStr = [formatter stringFromDate:self.configController.config.birthDate];
-        
-        // Build config script to inject after page fully loads
-        self.pendingConfigScript = [NSString stringWithFormat:
-            @"window.reconfigureScreenSaver({"
-            "  timeFormat: '%@',"
-            "  birthDate: new Date('%@'),"
-            "  scale: %f,"
-            "  brightness: %f,"
-            "  showBackground: %d,"
-            "  multiMonitor: %d"
-            "});",
-            self.configController.config.timeFormat,
-            birthDateStr,
-            self.configController.config.scale,
-            self.configController.config.brightness,
-            (int)self.configController.config.showBackground,
-            (int)self.configController.config.multiMonitor];
+        // 标记页面加载完成后需要注入配置（reInjectConfig 会从当前 self.bounds 构建最新尺寸）
+        self.pendingConfigScript = @"pending";
         
         [_webView loadFileURL:baseURL allowingReadAccessToURL:[baseURL URLByDeletingLastPathComponent]];
     } else {
@@ -266,15 +287,8 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
   if (self.pendingConfigScript) {
-    NSString *script = self.pendingConfigScript;
     self.pendingConfigScript = nil;
-    [_webView evaluateJavaScript:script completionHandler:^(id _Nullable result, NSError * _Nullable error) {
-      if (error) {
-        NSLog(@"[LifeClock] 配置注入失败: %@", error.localizedDescription);
-      } else {
-        NSLog(@"[LifeClock] 配置注入成功");
-      }
-    }];
+    [self reInjectConfig];
   }
 }
 

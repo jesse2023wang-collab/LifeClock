@@ -28,29 +28,27 @@ static NSString *const kScreenSaverURLsURLKey = @"kScreenSaverURLsURL";      // 
 static NSString *const kScreenSaverURLListKey = @"kScreenSaverURLList";  // NSArray of NSDictionary
 
 // New config keys
-static NSString *const kScreenSaverTimeFormatKey = @"kScreenSaverTimeFormat";
 static NSString *const kScreenSaverBirthDateKey = @"kScreenSaverBirthDate";
 static NSString *const kScreenSaverScaleKey = @"kScreenSaverScale";
 static NSString *const kScreenSaverBrightnessKey = @"kScreenSaverBrightness";
-static NSString *const kScreenSaverShowBackgroundKey = @"kScreenSaverShowBackground";
-static NSString *const kScreenSaverMultiMonitorKey = @"kScreenSaverMultiMonitor";
-
 // Default values
-static NSString *const kDefaultTimeFormat = @"00-23";
 static CGFloat const kDefaultScale = 0.7;
 static CGFloat const kDefaultBrightness = 0.3;
-static BOOL const kDefaultShowBackground = YES;
-static BOOL const kDefaultMultiMonitor = YES;
 
 static NSDate *defaultBirthDate(void) {
-  NSDateComponents *components = [[NSDateComponents alloc] init];
-  components.year = 2000;
-  components.month = 1;
-  components.day = 1;
-  components.hour = 0;
-  components.minute = 0;
-  components.second = 0;
-  return [NSCalendar.currentCalendar dateFromComponents:components];
+  static NSDate *cachedDate = nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    NSDateComponents *components = [[NSDateComponents alloc] init];
+    components.year = 2000;
+    components.month = 1;
+    components.day = 1;
+    components.hour = 0;
+    components.minute = 0;
+    components.second = 0;
+    cachedDate = [NSCalendar.currentCalendar dateFromComponents:components];
+  });
+  return cachedDate;
 }
 
 @interface WVSSConfig ()
@@ -69,7 +67,6 @@ static NSDate *defaultBirthDate(void) {
     self.addressListURL = [userDefaults stringForKey:kScreenSaverURLsURLKey];
     self.shouldFetchAddressList = [userDefaults boolForKey:kScreenSaverFetchURLsKey];
 
-    self.timeFormat = [userDefaults stringForKey:kScreenSaverTimeFormatKey] ?: kDefaultTimeFormat;
     self.birthDate = [userDefaults objectForKey:kScreenSaverBirthDateKey] ?: defaultBirthDate();
     self.scale = [userDefaults objectForKey:kScreenSaverScaleKey]
                      ? [userDefaults floatForKey:kScreenSaverScaleKey]
@@ -77,12 +74,6 @@ static NSDate *defaultBirthDate(void) {
     self.brightness = [userDefaults objectForKey:kScreenSaverBrightnessKey]
                          ? [userDefaults floatForKey:kScreenSaverBrightnessKey]
                          : kDefaultBrightness;
-    self.showBackground = [userDefaults objectForKey:kScreenSaverShowBackgroundKey]
-                             ? [userDefaults boolForKey:kScreenSaverShowBackgroundKey]
-                             : kDefaultShowBackground;
-    self.multiMonitor = [userDefaults objectForKey:kScreenSaverMultiMonitorKey]
-                           ? [userDefaults boolForKey:kScreenSaverMultiMonitorKey]
-                           : kDefaultMultiMonitor;
 
     if (!self.addresses) {
       self.addresses = [NSMutableArray array];
@@ -126,14 +117,9 @@ static NSDate *defaultBirthDate(void) {
     [self.userDefaults removeObjectForKey:kScreenSaverURLsURLKey];
   }
 
-  [self.userDefaults setObject:self.timeFormat forKey:kScreenSaverTimeFormatKey];
   [self.userDefaults setObject:self.birthDate forKey:kScreenSaverBirthDateKey];
   [self.userDefaults setFloat:self.scale forKey:kScreenSaverScaleKey];
   [self.userDefaults setFloat:self.brightness forKey:kScreenSaverBrightnessKey];
-  [self.userDefaults setBool:self.showBackground forKey:kScreenSaverShowBackgroundKey];
-  [self.userDefaults setBool:self.multiMonitor forKey:kScreenSaverMultiMonitorKey];
-
-  [self.userDefaults synchronize];
 }
 
 - (void)addAddressWithURL:(NSString *)url duration:(NSInteger)duration {

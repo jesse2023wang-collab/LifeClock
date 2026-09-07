@@ -37,12 +37,9 @@
 @property(nonatomic, strong) IBOutlet NSTextField *urlsURLField;
 @property(nonatomic, strong) IBOutlet NSButton *fetchURLCheckbox;
 
-@property(nonatomic, strong) IBOutlet NSPopUpButton *timeFormatPopup;
 @property(nonatomic, strong) IBOutlet NSDatePicker *birthDatePicker;
 @property(nonatomic, strong) IBOutlet NSSlider *scaleSlider;
 @property(nonatomic, strong) IBOutlet NSSlider *brightnessSlider;
-@property(nonatomic, strong) IBOutlet NSButton *showBackgroundCheckbox;
-@property(nonatomic, strong) IBOutlet NSButton *multiMonitorCheckbox;
 @property(nonatomic, strong) IBOutlet NSButton *xibConfirmButton;
 @property(nonatomic, strong) NSButton *confirmButton;
 
@@ -56,6 +53,7 @@
 - (IBAction)addRow:(id)sender;
 - (IBAction)removeRow:(id)sender;
 - (IBAction)resetData:(id)sender;
+- (IBAction)resetToDefaults:(id)sender;
 
 - (IBAction)dismissConfigSheet:(id)sender;
 - (IBAction)toggleFetchingURLs:(id)sender;

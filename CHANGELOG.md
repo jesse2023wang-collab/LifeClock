@@ -1,5 +1,33 @@
 # LifeClock 版本日志
 
+## v1.0.1 (2026-09-07)
+
+### 功能更新
+- **亮度控制修复**：亮度设置现在正确控制所有文字和符号（包括翻页数字），不再只控制英文文本
+- **DOM 性能优化**：使用 Map 缓存 flip-card 子元素引用、ResizeObserver 替代轮询、动画常量提取
+- **代码质量提升**：全部 `var` 替换为 `const`/`let`、删除死代码、删除冗余赋值、添加输入校验
+- **构建脚本改进**：`build_saver.sh` 支持通用二进制（arm64 + x86_64），自动处理扩展属性清理和签名
+
+### Bug 修复
+- **修复 `decisionHandler` 双重调用崩溃**：`decidePolicyForNavigationAction` 中缺失 `return;` 导致同一 handler 被调用两次
+- **修复 `NSSlider.integerValue = NO` 错误用法**：`integerValue` 是 getter，赋值 `NO` 实际将滑块值设为 0；改为 `allowsTickMarkValuesOnly = NO`
+- **修复出生日期选择器文字颜色**：白字配白底不可见，改为黑字白底
+- **修复 `NSKeyedArchiver`/`NSKeyedUnarchiver` 静默失败**：传入 `&error` 并检查返回值
+- **修复构建 CodeSign 失败**：`com.apple.provenance` 扩展属性导致签名拒绝，构建脚本自动清理再手动签名
+
+### Objective-C 代码改进
+- **私有 API 防护**：`wvss_setWindowOcclusionDetectionEnabled:` 添加 `respondsToSelector`
+- **`defaultBirthDate()` 缓存**：`dispatch_once` 缓存默认日期对象
+- **删除已弃用的 `synchronize`**：移除 `[NSUserDefaults synchronize]`
+- **删除未使用的 `bundleHTML` 方法**
+
+### 工程改进
+- **`install-from-source.sh` 重写**：修复构建上游项目而非本地 LifeClock 的问题
+- **`build_saver.sh` 增强**：`set -euo pipefail`、`ARCHS="arm64 x86_64"`、扩展属性清理、手动签名
+- **`index.html` 三副本同步**：根目录为主源文件，构建脚本自动同步
+
+---
+
 ## v1.0.0 (2026-07-07)
 
 ### Bug 修复

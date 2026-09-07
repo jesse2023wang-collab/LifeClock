@@ -3,98 +3,166 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Life Fliqlo — Enlarged Display</title>
+<title>Life Fliqlo</title>
 <style>
 html, body {
   height: 100%;
   margin: 0;
   background: #000;
-  color: #fff;
-  font-family: 'Helvetica Neue', Arial, sans-serif;
+  overflow: hidden;
+}
+body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.3s, opacity 0.3s;
-  overflow: hidden;
+}
+.screen-mirror {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1e;
+  border-radius: 4px;
 }
 .screen {
   display: flex;
   flex-direction: column;
   align-items: center;
   transform-origin: center center;
+  color: #fff;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
 }
 .flip-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  gap: 2vmin;
-  font-weight: 700;
 }
 .flip {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 20vmin;
+  gap: 0.08em;
 }
-.label {
-  margin-top: 0.5vmin;
-  font-size: 6vmin;
-  color: #777;
+
+/* --- Flip Card --- */
+.flip-card {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+  perspective: 300px;
 }
+.flip-digit {
+  display: block;
+  min-width: 0.58em;
+  text-align: center;
+  line-height: 1;
+  font-weight: 700;
+  position: relative;
+  z-index: 0;
+}
+.flip-cover-top,
+.flip-cover-bottom {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+  backface-visibility: hidden;
+  z-index: 1;
+}
+.flip-cover-top {
+  top: 0;
+  height: 50%;
+  transform-origin: bottom center;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.flip-cover-bottom {
+  bottom: 0;
+  height: 50%;
+  transform-origin: top center;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+.flip-cover-inner {
+  font-weight: 700;
+  line-height: 1;
+  display: block;
+}
+
+/* --- Colon --- */
 .colon {
-  font-size: 20vmin;
-  color: #bbb;
-  align-self: flex-end;
+  font-weight: 700;
+  line-height: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.05em;
 }
+
+/* --- Units --- */
 .units-row {
   display: flex;
   justify-content: center;
-  gap: 8vmin;
-  margin-top: 1vmin;
-  font-size: 6vmin;
   color: #777;
 }
-@media (max-width:600px){
-  .flip { font-size: 32vmin; }
-  .colon { font-size: 32vmin; }
-  .units-row { font-size: 8vmin; gap: 12vmin; }
+.units-row span {
+  display: block;
+  text-align: center;
+  font-weight: 600;
+  letter-spacing: 0.05em;
 }
 </style>
 </head>
 <body>
-<div class="screen" id="screen">
-  <div class="flip-row" id="flipRow">
-    <div class="flip" id="blockDays"></div>
-    <div class="colon">:</div>
-    <div class="flip" id="blockHr"></div>
-    <div class="colon">:</div>
-    <div class="flip" id="blockMin"></div>
-    <div class="colon">:</div>
-    <div class="flip" id="blockSec"></div>
-  </div>
-  <div class="units-row" id="unitsRow">
-    <span id="unitDays">DAYS</span>
-    <span id="unitHr">HOURS</span>
-    <span id="unitMin">MINUTES</span>
-    <span id="unitSec">SECONDS</span>
+<div class="screen-mirror" id="screenMirror">
+  <div class="screen" id="screen">
+    <div class="flip-row" id="flipRow">
+      <div class="flip" id="blockDays"></div>
+      <div class="colon" aria-hidden="true">:</div>
+      <div class="flip" id="blockHr"></div>
+      <div class="colon" aria-hidden="true">:</div>
+      <div class="flip" id="blockMin"></div>
+      <div class="colon" aria-hidden="true">:</div>
+      <div class="flip" id="blockSec"></div>
+    </div>
+    <div class="units-row" id="unitsRow">
+      <span id="unitDays">DAYS</span>
+      <span id="unitHr">HOURS</span>
+      <span id="unitMin">MINUTES</span>
+      <span id="unitSec">SECONDS</span>
+    </div>
   </div>
 </div>
 
 <script>
 const defaultBirthDate = new Date("2000-01-01T00:00:00");
 
-let config = window.screensaverConfig || {
-  timeFormat: '00-23',
-  birthDate: defaultBirthDate,
-  scale: 0.7,
-  brightness: 0.3,
-  showBackground: true,
-  multiMonitor: true
-};
+// 配置校验：确保 screensaverConfig 字段有效
+function sanitizeConfig(raw) {
+  const cfg = {};
+  if (raw && typeof raw === 'object') {
+    cfg.birthDate = raw.birthDate instanceof Date ? raw.birthDate : defaultBirthDate;
+    cfg.scale = (typeof raw.scale === 'number' && raw.scale >= 0.1 && raw.scale <= 2.0) ? raw.scale : 0.7;
+    cfg.brightness = (typeof raw.brightness === 'number' && raw.brightness >= 0 && raw.brightness <= 1.0) ? raw.brightness : 0.3;
+    cfg.screenWidth = (typeof raw.screenWidth === 'number' && raw.screenWidth > 0) ? raw.screenWidth : undefined;
+    cfg.screenHeight = (typeof raw.screenHeight === 'number' && raw.screenHeight > 0) ? raw.screenHeight : undefined;
+  } else {
+    cfg.birthDate = defaultBirthDate;
+    cfg.scale = 0.7;
+    cfg.brightness = 0.3;
+  }
+  return cfg;
+}
+
+let config = sanitizeConfig(window.screensaverConfig);
 
 let startDate = config.birthDate || defaultBirthDate;
 
-// Cache DOM references — created once in HTML, never destroyed
+// 动画常量
+const FLIP_DURATION_MS = 150;
+const FLIP_CYCLE_MS = 350;
+
+// Cache DOM references
 const blocks = {
   days: document.getElementById('blockDays'),
   hr:   document.getElementById('blockHr'),
@@ -108,7 +176,93 @@ const units = {
   min:  document.getElementById('unitMin'),
   sec:  document.getElementById('unitSec')
 };
+const unitsList = [units.days, units.hr, units.min, units.sec];
 const screenEl = document.getElementById('screen');
+const mirrorEl = document.getElementById('screenMirror');
+const flipRowEl = document.getElementById('flipRow');
+const unitsRowEl = document.getElementById('unitsRow');
+let flipEls = []; // 将在 initBlocks 后缓存
+
+// 缓存每个 flip-card 的子元素引用
+const cardCache = new Map();
+
+function getCardParts(card) {
+  let parts = cardCache.get(card);
+  if (!parts) {
+    parts = {
+      digit: card.querySelector('.flip-digit'),
+      topCover: card.querySelector('.flip-cover-top'),
+      bottomCover: card.querySelector('.flip-cover-bottom'),
+      topInner: null,
+      bottomInner: null
+    };
+    parts.topInner = parts.topCover.querySelector('.flip-cover-inner');
+    parts.bottomInner = parts.bottomCover.querySelector('.flip-cover-inner');
+    cardCache.set(card, parts);
+  }
+  return parts;
+}
+
+// 初始化每个时间块的翻页卡牌 DOM 结构
+function initBlocks() {
+  const blockConfig = [
+    { id: 'days', digits: 5 },
+    { id: 'hr',   digits: 2 },
+    { id: 'min',  digits: 2 },
+    { id: 'sec',  digits: 2 }
+  ];
+  blockConfig.forEach(function(cfg) {
+    const block = document.getElementById('block' + cfg.id.charAt(0).toUpperCase() + cfg.id.slice(1));
+    block.dataset.value = '';
+    let html = '';
+    for (let i = 0; i < cfg.digits; i++) {
+      html += '<div class="flip-card" data-digit="0">' +
+                '<span class="flip-digit">0</span>' +
+                '<div class="flip-cover-top"><span class="flip-cover-inner">0</span></div>' +
+                '<div class="flip-cover-bottom"><span class="flip-cover-inner">0</span></div>' +
+              '</div>';
+    }
+    block.innerHTML = html;
+  });
+  // 缓存 flip 元素引用
+  flipEls = Array.from(document.querySelectorAll('.flip'));
+}
+
+// --- 尺寸计算 ---
+function computeSizes() {
+  const viewW = window.innerWidth;
+  const viewH = window.innerHeight;
+
+  mirrorEl.style.width  = viewW + 'px';
+  mirrorEl.style.height = viewH + 'px';
+
+  const isPreview = viewW < 500;
+  const mirrorScale = isPreview ? Math.min(0.6, 200 / viewW) : 1.0;
+  mirrorEl.style.transform = 'scale(' + mirrorScale + ')';
+  mirrorEl.style.background = isPreview ? '#1a1a1e' : '#000';
+  mirrorEl.style.borderRadius = isPreview ? '4px' : '0';
+
+  const flipFontSize   = Math.round(viewH * 0.20);
+  const colonFontSize  = flipFontSize;
+  const unitsFontSize  = Math.round(viewH * 0.06);
+  const flipGap        = Math.round(viewH * 0.02);
+  const unitsGap       = Math.round(viewH * 0.08);
+  const unitsMarginTop = Math.round(viewH * 0.01);
+
+  // 应用字号（使用缓存的 flipEls）
+  flipEls.forEach(function(el) {
+    el.style.fontSize = flipFontSize + 'px';
+  });
+  colons.forEach(function(el) {
+    el.style.fontSize = colonFontSize + 'px';
+  });
+  unitsRowEl.style.fontSize = unitsFontSize + 'px';
+
+  // 间距
+  flipRowEl.style.gap = flipGap + 'px';
+  unitsRowEl.style.gap = unitsGap + 'px';
+  unitsRowEl.style.marginTop = unitsMarginTop + 'px';
+}
 
 function pad(num, len) {
   let s = String(num);
@@ -121,63 +275,93 @@ function computeSince(start) {
   const diff = Math.max(0, now - start);
   const sec = Math.floor(diff / 1000) % 60;
   const min = Math.floor(diff / 60000) % 60;
-  let hr = Math.floor(diff / 3600000) % 24;
+  const hr = Math.floor(diff / 3600000) % 24;
   const days = Math.floor(diff / 86400000);
-
-  if (config.timeFormat === '01-12') {
-    hr = hr % 12;
-    if (hr === 0) hr = 12;
-  }
-
-  return { days, hr, min, sec };
+  return { days: days, hr: hr, min: min, sec: sec };
 }
 
-// Incremental update — only changes textContent, no DOM recreation
+// --- 翻页卡牌动画 ---
+function flipCard(card, oldDigit, newDigit) {
+  const parts = getCardParts(card);
+  const { digit: digitEl, topCover, bottomCover, topInner, bottomInner } = parts;
+
+  // 设置新数字（底层）
+  digitEl.textContent = newDigit;
+
+  // 上半覆盖层 = 旧数字（将翻走）
+  topInner.textContent = oldDigit;
+  // 下半覆盖层 = 新数字（将翻入）
+  bottomInner.textContent = newDigit;
+
+  // 重置变换
+  topCover.style.transition = 'none';
+  bottomCover.style.transition = 'none';
+  topCover.style.transform = 'rotateX(0deg)';
+  bottomCover.style.transform = 'rotateX(90deg)';
+
+  // 强制回流：确保 transition 重置生效后再开始动画
+  void topCover.offsetWidth;
+
+  // Phase 1: 上半部分翻走（0deg → -90deg，揭示新数字上半）
+  topCover.style.transition = 'transform ' + FLIP_DURATION_MS + 'ms ease-in';
+  topCover.style.transform = 'rotateX(-90deg)';
+
+  // Phase 2: 下半部分翻入（90deg → 0deg，揭示新数字下半）
+  setTimeout(function() {
+    bottomCover.style.transition = 'transform ' + FLIP_DURATION_MS + 'ms ease-out';
+    bottomCover.style.transform = 'rotateX(0deg)';
+  }, FLIP_DURATION_MS);
+
+  // 动画结束后重置覆盖层显示新数字
+  setTimeout(function() {
+    topCover.style.transition = 'none';
+    bottomCover.style.transition = 'none';
+    topCover.style.transform = 'rotateX(0deg)';
+    bottomCover.style.transform = 'rotateX(0deg)';
+    topInner.textContent = newDigit;
+    bottomInner.textContent = newDigit;
+  }, FLIP_CYCLE_MS);
+}
+
+function flipTo(block, newValue) {
+  const oldValue = block.dataset.value || '';
+  if (oldValue === newValue) return;
+  block.dataset.value = newValue;
+
+  // 使用缓存的子元素（children 是实时集合但无需 querySelector）
+  const cards = block.children;
+  for (let i = 0; i < cards.length; i++) {
+    const oldDigit = (i < oldValue.length) ? oldValue[i] : '0';
+    const newDigit = (i < newValue.length) ? newValue[i] : '0';
+    if (oldDigit !== newDigit) {
+      flipCard(cards[i], oldDigit, newDigit);
+    }
+  }
+}
+
 function updateDisplay() {
   const t = computeSince(startDate);
-
-  blocks.days.textContent = pad(t.days, 5);
-  blocks.hr.textContent   = pad(t.hr, 2);
-  blocks.min.textContent  = pad(t.min, 2);
-  blocks.sec.textContent  = pad(t.sec, 2);
+  flipTo(blocks.days, pad(t.days, 5));
+  flipTo(blocks.hr,   pad(t.hr, 2));
+  flipTo(blocks.min,  pad(t.min, 2));
+  flipTo(blocks.sec,  pad(t.sec, 2));
 }
 
 function applyConfig() {
-  if (!config.showBackground) {
-    document.body.style.background = 'transparent';
-  }
-
+  // 亮度统一控制所有文字和符号的颜色
   const brightness = Math.floor(config.brightness * 255);
-  document.body.style.color = `rgb(${brightness}, ${brightness}, ${brightness})`;
-
-  const labelBrightness = Math.floor(config.brightness * 119);
+  const colorStr = 'rgb(' + brightness + ', ' + brightness + ', ' + brightness + ')';
+  screenEl.style.color = colorStr;
   colons.forEach(function(colon) {
-    colon.style.color = `rgb(${labelBrightness}, ${labelBrightness}, ${labelBrightness})`;
+    colon.style.color = colorStr;
   });
-  Object.values(units).forEach(function(unit) {
-    unit.style.color = `rgb(${labelBrightness}, ${labelBrightness}, ${labelBrightness})`;
+  unitsList.forEach(function(unit) {
+    unit.style.color = colorStr;
   });
 
-  // 智能缩放：当内容超出视口时自动缩小，锁屏全屏通常不受影响
-  screenEl.style.transform = 'none';
-  const rect = screenEl.getBoundingClientRect();
-  const maxWidthScale = window.innerWidth / rect.width;
-  const maxHeightScale = window.innerHeight / rect.height;
-  const maxScale = Math.min(maxWidthScale, maxHeightScale, 1);
-  const finalScale = Math.min(config.scale, maxScale);
-  screenEl.style.transform = `scale(${finalScale})`;
+  computeSizes();
 
-  if (config.timeFormat === '中文') {
-    units.days.textContent = '天';
-    units.hr.textContent   = '时';
-    units.min.textContent  = '分';
-    units.sec.textContent  = '秒';
-  } else {
-    units.days.textContent = 'DAYS';
-    units.hr.textContent   = 'HOURS';
-    units.min.textContent  = 'MINUTES';
-    units.sec.textContent  = 'SECONDS';
-  }
+  screenEl.style.transform = 'scale(' + config.scale + ')';
 }
 
 function tick() {
@@ -185,15 +369,37 @@ function tick() {
   setTimeout(tick, 1000 - (Date.now() % 1000));
 }
 
-// Allow Objective-C to re-inject config after page loads
+// --- 视图尺寸变化自动校正（使用 ResizeObserver 替代轮询） ---
+let resizeRafId = null;
+const resizeObserver = new ResizeObserver(function() {
+  if (resizeRafId) {
+    cancelAnimationFrame(resizeRafId);
+  }
+  resizeRafId = requestAnimationFrame(function() {
+    computeSizes();
+    resizeRafId = null;
+  });
+});
+resizeObserver.observe(mirrorEl);
+
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden) {
+    computeSizes();
+  }
+});
+
+// Objective-C 配置注入（含输入校验）
 window.reconfigureScreenSaver = function(newConfig) {
-  config = newConfig;
+  config = sanitizeConfig(newConfig);
   startDate = config.birthDate || defaultBirthDate;
   applyConfig();
   updateDisplay();
 };
 
+// 初始化
+initBlocks();
 applyConfig();
+updateDisplay(); // 立即显示真实值，避免全零闪烁
 tick();
 </script>
 </body>
