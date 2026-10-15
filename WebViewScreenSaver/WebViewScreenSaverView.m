@@ -36,10 +36,16 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
 // Timer callback that loads the next URL in the URL list.
 - (void)loadNext:(NSTimer *)timer;
 
+// 诊断日志与 frame 自检
+- (void)watchdogTick:(NSTimer *)timer;
+- (void)diagLog:(NSString *)format, ... NS_FORMAT_FUNCTION(1, 2);
+- (void)diagGeometry:(NSString *)tag;
+
 @end
 
 @implementation WebViewScreenSaverView {
   NSTimer *_timer;
+  NSTimer *_watchdogTimer;
   WKWebView *_webView;
   NSInteger _currentIndex;
   BOOL _isPreview;
@@ -91,6 +97,8 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   [NSDistributedNotificationCenter.defaultCenter removeObserver:self];
   [_timer invalidate];
   _timer = nil;
+  [_watchdogTimer invalidate];
+  _watchdogTimer = nil;
 }
 
 #pragma mark - Configure Sheet
@@ -147,17 +155,129 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   }
   [self addSubview:_webView];
 
+  // addSubview 之后 autoresizing 才算得出首次 frame，此处异步补一次校正，
+  // 避免父视图 oldSize 退化（0×0）时 WebView 被算成错误尺寸。
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self syncWebViewFrame];
+  });
+
+  [self diagGeometry:@"session-start"];
+
+  // 每 2 秒自检一次 WebView frame。屏保一旦退出就无法再抓现场，
+  // watchdog 既能在异常出现后 2 秒内自愈，也会把异常几何落盘留证。
+  [_watchdogTimer invalidate];
+  _watchdogTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
+                                                    target:self
+                                                  selector:@selector(watchdogTick:)
+                                                  userInfo:nil
+                                                   repeats:YES];
+  _watchdogTimer.tolerance = 1.0;
+
   if (_currentIndex < [[self selectedURLs] count]) {
     [self loadFromStart];
   }
 }
 
+// 强制让 WebView 的 frame 与 self.bounds 一致。
+//
+// 只靠 autoresizingMask 是不够的：当 superview 的旧尺寸退化为 0×0（显示器唤醒、
+// 分辨率切换、外接屏插拔、Space 切换）时，AppKit 计算 autoresizing 需要除以旧尺寸，
+// 结果 WebView 可能被算成屏幕的像素尺寸（如 2880×1800）而非 points（1440×900）。
+// ScreenSaverView 是非 flipped 坐标系（原点左下），此时可见区域只剩 WebView 的左下象限，
+// 页面居中内容会落到屏幕右上角并被裁掉四分之三。
+- (void)syncWebViewFrame {
+  if (_isPreview || !_webView) return;
+  if (!NSEqualRects(_webView.frame, self.bounds)) {
+    [self diagLog:@"FIX webFrame %@ -> bounds %@",
+          NSStringFromRect(_webView.frame), NSStringFromRect(self.bounds)];
+    _webView.frame = self.bounds;
+  }
+}
+
 // 当屏幕保护视图被调整大小时（如显示器分辨率变化、外接显示器插拔、合盖唤醒等），
-// 重新注入配置以更新 HTML 中的视口尺寸，确保时钟居中。
+// 先纠正 WebView frame，再重新注入配置以更新 HTML 中的视口尺寸，确保时钟居中。
 - (void)resizeWithOldSuperviewSize:(NSSize)oldSize {
   [super resizeWithOldSuperviewSize:oldSize];
+  [self diagGeometry:[NSString stringWithFormat:@"resize oldSuperview=%.0fx%.0f",
+                                                 oldSize.width, oldSize.height]];
+  [self syncWebViewFrame];
   if (_isPreview || !_webView) return;
   [self reInjectConfig];
+}
+
+// 视图被移入窗口时（此时才真正拿到屏幕与 backing scale），同样需要校正一次。
+- (void)viewDidMoveToWindow {
+  [super viewDidMoveToWindow];
+  [self diagGeometry:@"move-to-window"];
+  [self syncWebViewFrame];
+  if (_isPreview || !_webView || !self.window) return;
+  [self reInjectConfig];
+}
+
+#pragma mark - 诊断日志与自检
+
+// watchdog：周期性自检 frame，异常即纠正并留证。
+- (void)watchdogTick:(NSTimer *)timer {
+  [self syncWebViewFrame];
+}
+
+// 记录一次完整几何快照：自身 bounds、WebView frame、窗口、屏幕与 backing scale。
+// 出现显示异常时，这几项足以还原"数字跑到右上角被裁"的全部成因。
+- (void)diagGeometry:(NSString *)tag {
+  if (_isPreview) return;
+  NSScreen *screen = self.window.screen ?: NSScreen.mainScreen;
+  [self diagLog:@"%@ bounds=%@ webFrame=%@ window=%@ screen=%@ backing=%.1f",
+        tag,
+        NSStringFromRect(self.bounds),
+        NSStringFromRect(_webView ? _webView.frame : NSZeroRect),
+        NSStringFromRect(self.window.frame),
+        NSStringFromRect(screen.frame),
+        self.window.backingScaleFactor];
+}
+
+// 屏保退出后现场即消失，无法实时抓日志，因此把关键事件追加写入磁盘日志。
+// 下次看到显示异常，退出屏保后取该文件即可复盘。
+- (NSString *)diagLogPath {
+  NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/LifeClock"];
+  return [dir stringByAppendingPathComponent:@"diag.log"];
+}
+
+- (void)diagLog:(NSString *)format, ... {
+  if (_isPreview) return;
+
+  va_list args;
+  va_start(args, format);
+  NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+  va_end(args);
+
+  NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+  fmt.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+  fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS";
+  NSString *line = [NSString stringWithFormat:@"%@ %@\n",
+                    [fmt stringFromDate:[NSDate date]], message];
+
+  NSFileManager *fm = NSFileManager.defaultManager;
+  NSString *path = [self diagLogPath];
+  [fm createDirectoryAtPath:[path stringByDeletingLastPathComponent]
+      withIntermediateDirectories:YES
+                       attributes:nil
+                            error:nil];
+
+  // 体积上限 1MB，超出则轮转为 .1，避免无限增长
+  unsigned long long size = [[fm attributesOfItemAtPath:path error:nil][NSFileSize] unsignedLongLongValue];
+  if (size > 1024 * 1024) {
+    NSString *rotated = [path stringByAppendingString:@".1"];
+    [fm removeItemAtPath:rotated error:nil];
+    [fm moveItemAtPath:path toPath:rotated error:nil];
+  }
+
+  if (![fm fileExistsAtPath:path]) {
+    [fm createFileAtPath:path contents:nil attributes:nil];
+  }
+  NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+  [handle seekToEndOfFile];
+  [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+  [handle closeFile];
 }
 
 // 构建并注入最新的配置脚本（含更新后的 bounds 尺寸）
@@ -198,6 +318,8 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   
   [_timer invalidate];
   _timer = nil;
+  [_watchdogTimer invalidate];
+  _watchdogTimer = nil;
   [_webView removeFromSuperview];
   _webView = nil;
 }

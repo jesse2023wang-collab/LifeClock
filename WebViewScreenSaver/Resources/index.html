@@ -228,10 +228,40 @@ function initBlocks() {
   flipEls = Array.from(document.querySelectorAll('.flip'));
 }
 
+// --- 视口尺寸解析（含异常钳制） ---
+// 正常情况 window.innerWidth 就是 WebView 的 points 宽度。
+// 但原生层 autoresizing 偶发失效时，WebView 的 frame 可能被算成屏幕的像素尺寸
+// （Retina 下为 points 的 2 倍），此时 innerWidth 会异常偏大，页面居中内容会落到
+// 屏幕右上角并被裁掉。用 window.screen 与原生注入的 screenWidth 交叉校验并钳制。
+function resolveViewport() {
+  let viewW = window.innerWidth;
+  let viewH = window.innerHeight;
+
+  const candidates = [];
+  if (window.screen && window.screen.width > 0) {
+    candidates.push([window.screen.width, window.screen.height]);
+  }
+  if (config.screenWidth > 0 && config.screenHeight > 0) {
+    candidates.push([config.screenWidth, config.screenHeight]);
+  }
+
+  for (const [refW, refH] of candidates) {
+    // innerWidth 超出参考宽度 1.5 倍即视为像素/点混淆，钳制回参考尺寸
+    if (viewW > refW * 1.5) {
+      viewW = refW;
+      viewH = refH;
+      break;
+    }
+  }
+
+  return { w: viewW, h: viewH };
+}
+
 // --- 尺寸计算 ---
 function computeSizes() {
-  const viewW = window.innerWidth;
-  const viewH = window.innerHeight;
+  const viewport = resolveViewport();
+  const viewW = viewport.w;
+  const viewH = viewport.h;
 
   mirrorEl.style.width  = viewW + 'px';
   mirrorEl.style.height = viewH + 'px';
@@ -369,9 +399,10 @@ function tick() {
   setTimeout(tick, 1000 - (Date.now() % 1000));
 }
 
-// --- 视图尺寸变化自动校正（使用 ResizeObserver 替代轮询） ---
+// --- 视图尺寸变化自动校正 ---
+// 合并到一帧内执行，避免 resize 抖动时重复重排
 let resizeRafId = null;
-const resizeObserver = new ResizeObserver(function() {
+function scheduleComputeSizes() {
   if (resizeRafId) {
     cancelAnimationFrame(resizeRafId);
   }
@@ -379,8 +410,18 @@ const resizeObserver = new ResizeObserver(function() {
     computeSizes();
     resizeRafId = null;
   });
-});
-resizeObserver.observe(mirrorEl);
+}
+
+// 必须观察 documentElement 而不是 mirrorEl：
+// mirrorEl 的宽高是 computeSizes() 自己写死的 px 值，视口变化而它没被更新时
+// ResizeObserver 根本不会触发，页面就永远停在过期尺寸上（自愈死锁）。
+const resizeObserver = new ResizeObserver(scheduleComputeSizes);
+resizeObserver.observe(document.documentElement);
+
+window.addEventListener('resize', scheduleComputeSizes);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', scheduleComputeSizes);
+}
 
 document.addEventListener('visibilitychange', function() {
   if (!document.hidden) {

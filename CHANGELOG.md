@@ -1,5 +1,19 @@
 # LifeClock 版本日志
 
+## v1.0.2 (2026-10-15)
+
+### Bug 修复
+- **修复屏保偶发"数字跑到右上角并被裁切一大半"**：根因是 `WKWebView` 的 frame 偶发被 AppKit autoresizing 算成屏幕像素尺寸（Retina 下为 points 的 2 倍），非 flipped 坐标系下仅左下象限可见。新增 `syncWebViewFrame`，在 `startAnimation`、`resizeWithOldSuperviewSize:`、`viewDidMoveToWindow` 三处强制纠正 frame
+- **修复前端视口无自愈能力**：`ResizeObserver` 改为观察 `documentElement`（原观察的 mirror 元素尺寸由 JS 自己写死，视口变化时不触发，形成自愈死锁）；恢复 `window.resize` / `visualViewport.resize` 监听并合帧节流
+- **修复原生注入的 screenWidth/screenHeight 为死代码**：新增 `resolveViewport()`，用 `window.screen` 与原生注入尺寸交叉校验，`innerWidth` 超出参考值 1.5 倍时钳制回参考尺寸
+- **修复 `build_saver.sh` 签名被破坏**：原脚本在 `codesign` 之后才覆盖 `index.html` 导致签名失效；改为构建前同步根目录 index.html 到 `WebViewScreenSaver/Resources/`，并新增 `codesign --verify` 校验
+
+### 工程改进
+- **frame 自检 watchdog**：每 2 秒校验一次 WebView frame，异常即纠正，避免异常画面持续停留
+- **离线诊断日志**：会话开始 / 窗口移动 / resize / frame 纠正等几何事件追加写入 `~/Library/Logs/LifeClock/diag.log`（超 1MB 轮转为 `.1`），屏保退出后仍可复盘
+
+---
+
 ## v1.0.1 (2026-09-07)
 
 ### 功能更新

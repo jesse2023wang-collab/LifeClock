@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>BuildMachineOSBuild</key>
-	<string>26A5425a</string>
+	<string>26B5112a</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
@@ -13,11 +13,11 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>LifeClock v1.0.1</string>
+	<string>LifeClock v1.0.2</string>
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.1</string>
+	<string>1.0.2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleSupportedPlatforms</key>
@@ -25,23 +25,23 @@
 		<string>MacOSX</string>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>1.0.1</string>
+	<string>1.0.2</string>
 	<key>DTCompiler</key>
 	<string>com.apple.compilers.llvm.clang.1_0</string>
 	<key>DTPlatformBuild</key>
-	<string>26A5378i</string>
+	<string>26A425</string>
 	<key>DTPlatformName</key>
 	<string>macosx</string>
 	<key>DTPlatformVersion</key>
 	<string>27.0</string>
 	<key>DTSDKBuild</key>
-	<string>26A5378i</string>
+	<string>26A425</string>
 	<key>DTSDKName</key>
 	<string>macosx27.0</string>
 	<key>DTXcode</key>
 	<string>2700</string>
 	<key>DTXcodeBuild</key>
-	<string>27A5218g</string>
+	<string>27A266a</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
 	<key>NSPrincipalClass</key>

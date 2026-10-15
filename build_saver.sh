@@ -11,6 +11,10 @@ echo ""
 
 cd "$PROJECT_DIR/WebViewScreenSaver"
 
+echo "Syncing index.html from project root..."
+# 根目录 index.html 是唯一源文件，Xcode 打包用的是 WebViewScreenSaver/Resources/index.html
+cp "$PROJECT_DIR/index.html" "$PROJECT_DIR/WebViewScreenSaver/Resources/index.html"
+
 echo "Cleaning extended attributes from source resources..."
 xattr -cr "$PROJECT_DIR/WebViewScreenSaver/Resources/"
 
@@ -32,13 +36,16 @@ echo "Copying to $OUTPUT_DIR..."
 rm -rf "$OUTPUT_DIR/$SAVER_NAME"
 cp -R "$BUILD_DIR/LifeClock.saver" "$OUTPUT_DIR/$SAVER_NAME"
 
-echo ""
-echo "Copying updated index.html..."
-cp "$PROJECT_DIR/index.html" "$OUTPUT_DIR/$SAVER_NAME/Contents/Resources/index.html"
+# 注意：不要在此处再覆盖 index.html —— 那会让上面的 codesign 失效。
+# index.html 已在构建前同步，由 Xcode 打进 bundle 并一起签名。
 
 echo ""
 echo "Updating .saver bundle modification time for Finder..."
 find "$OUTPUT_DIR/$SAVER_NAME" -exec touch {} \;
+
+echo ""
+echo "Verifying code signature..."
+codesign --verify --verbose=1 "$OUTPUT_DIR/$SAVER_NAME"
 
 echo ""
 echo "=== Done! ==="
