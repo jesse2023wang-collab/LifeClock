@@ -1,5 +1,24 @@
 # LifeClock 版本日志
 
+## v1.0.4 (2026-10-16)
+
+### UI 优化
+- **设置页面版本号移至右上角**，与「实时预览」标题水平对齐
+- **按钮风格对齐 macOS 系统 UI**：使用 `NSButton.buttonWithTitle:target:action:` 系统标准按钮，主操作按钮绑定 Return 键，取消按钮绑定 ESC 键，按钮右对齐
+- **版本号不再出现在屏保列表名称中**：`CFBundleName` 改回 "LifeClock"（无版本后缀），版本号仅在设置页面右上角显示
+- **预览框优化**：比例从 16:9 改为 16:10 匹配实际屏幕，内容缩放从 0.5 提升至 0.88，黑边大幅缩小
+- **冒号横向居中对齐**：数字间的 `:` 号视觉中心偏下，添加 `translateY(-0.06em)` 修正
+
+### 配置修复
+- **「恢复默认」改为临时改动**：点击后只更新 UI 控件，点「确认」才持久化，点「取消」丢弃
+- **`WVSSConfig.synchronize` 强制刷盘**：末尾添加 `[self.userDefaults synchronize]`，确保点「确认」后下次屏保启动能读到新值
+- **明暗程度默认值从 0.3 改为 0.7**，同步更新滑杆范围（min 从 0.1 改为 0.3，与缩放滑杆一致）
+
+### 工程整理
+- **删除旧脚本 `install-from-source.sh`**（已被 `build_saver.sh` + `Build.command` 取代）
+- **`index.html` 源文件移至 `WebViewScreenSaver/`** 目录下
+- **新增 `Build.command`**：双击即可构建并安装
+
 ## v1.0.3 (2026-10-15)
 
 ### Bug 修复

@@ -33,7 +33,7 @@ static NSString *const kScreenSaverScaleKey = @"kScreenSaverScale";
 static NSString *const kScreenSaverBrightnessKey = @"kScreenSaverBrightness";
 // Default values
 static CGFloat const kDefaultScale = 0.7;
-static CGFloat const kDefaultBrightness = 0.3;
+static CGFloat const kDefaultBrightness = 0.7;
 
 static NSDate *defaultBirthDate(void) {
   static NSDate *cachedDate = nil;
@@ -120,6 +120,10 @@ static NSDate *defaultBirthDate(void) {
   [self.userDefaults setObject:self.birthDate forKey:kScreenSaverBirthDateKey];
   [self.userDefaults setFloat:self.scale forKey:kScreenSaverScaleKey];
   [self.userDefaults setFloat:self.brightness forKey:kScreenSaverBrightnessKey];
+
+  // ScreenSaverDefaults 的写入可能不会立即刷盘，导致配置面板点了「确认」
+  // 后、下一次屏保启动时仍读到旧值。强制 synchronize 确保落盘。
+  [self.userDefaults synchronize];
 }
 
 - (void)addAddressWithURL:(NSString *)url duration:(NSInteger)duration {

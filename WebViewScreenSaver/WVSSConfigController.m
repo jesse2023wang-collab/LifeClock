@@ -179,12 +179,12 @@ static NSString *const kTableColumnPreview = @"preview";
   // 重置缩放为 0.7
   [self.scaleSlider setFloatValue:0.7];
   
-  // 重置亮度为 0.3
-  [self.brightnessSlider setFloatValue:0.3];
+  // 重置亮度为 0.7
+  [self.brightnessSlider setFloatValue:0.7];
   
   // 更新数值标签
   self.scaleValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", 0.7];
-  self.brightnessValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", 0.3];
+  self.brightnessValueLabel.stringValue = [NSString stringWithFormat:@"%.2f", 0.7];
   
   // 刷新预览
   [self refreshPreview];
@@ -342,9 +342,9 @@ static NSString *const kTableColumnPreview = @"preview";
   CGFloat sectionGap = 26;
   CGFloat itemGap = 4;
 
-  // 预览框：使用可用宽度，保持 16:9 比例
+  // 预览框：使用可用宽度，保持 16:10 比例（匹配实际屏幕）
   CGFloat previewWidth = windowWidth - paddingX * 2;
-  CGFloat previewHeight = previewWidth * 9.0 / 16.0;
+  CGFloat previewHeight = previewWidth * 10.0 / 16.0;
   CGFloat previewX = (windowWidth - previewWidth) / 2.0;
 
   CGFloat currentY = windowHeight - 30;
@@ -490,7 +490,7 @@ static NSString *const kTableColumnPreview = @"preview";
   [containerView addSubview:brightnessLabel];
 
   self.brightnessSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, sliderWidth, rowHeight)];
-  self.brightnessSlider.minValue = 0.1;
+  self.brightnessSlider.minValue = 0.3;
   self.brightnessSlider.maxValue = 1.0;
   self.brightnessSlider.allowsTickMarkValuesOnly = NO;
   [containerView addSubview:self.brightnessSlider];
@@ -506,7 +506,7 @@ static NSString *const kTableColumnPreview = @"preview";
 
   currentY -= (hintHeight + itemGap);
   NSTextField *brightnessHint = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX + labelWidth + 8, currentY, sliderWidth, hintHeight)];
-  brightnessHint.stringValue = @"调节文字亮度，较低亮度适合暗环境";
+  brightnessHint.stringValue = @"调节文字亮度，范围 0.3 ~ 1.0";
   brightnessHint.font = [NSFont systemFontOfSize:10];
   brightnessHint.textColor = [NSColor colorWithCalibratedWhite:0.45 alpha:1.0];
   brightnessHint.bezeled = NO;
@@ -517,59 +517,50 @@ static NSString *const kTableColumnPreview = @"preview";
 
   currentY -= sectionGap;
 
-  // --- 恢复默认按钮 ---
-  NSButton *resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(paddingX, currentY, 0, 24)];
-  resetButton.buttonType = NSButtonTypeMomentaryPushIn;
-  resetButton.bezelStyle = NSBezelStyleSmallSquare;
-  resetButton.title = @"恢复默认";
-  resetButton.target = self;
-  resetButton.action = @selector(resetToDefaults:);
+  // --- 恢复默认按钮（标准系统按钮风格）---
+  NSButton *resetButton = [NSButton buttonWithTitle:@"恢复默认" target:self action:@selector(resetToDefaults:)];
   [resetButton sizeToFit];
-  resetButton.frame = NSMakeRect(paddingX, currentY, resetButton.frame.size.width, 24);
+  resetButton.frame = NSMakeRect(paddingX, currentY, resetButton.frame.size.width, resetButton.frame.size.height);
   [containerView addSubview:resetButton];
 
   currentY -= 46;
 
-  // 底部按钮
-  CGFloat buttonGap = 12;
+  // 底部按钮：右对齐，遵循 macOS 人机界面规范（主操作在最右，取消在其左）
+  CGFloat buttonGap = 8;
   CGFloat buttonY = 12;
 
-  NSButton *cancelButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, buttonY, 0, 24)];
-  cancelButton.buttonType = NSButtonTypeMomentaryPushIn;
-  cancelButton.bezelStyle = NSBezelStyleSmallSquare;
-  cancelButton.title = @"取消";
-  cancelButton.target = self;
-  cancelButton.action = @selector(cancelConfigSheet:);
-  [cancelButton sizeToFit];
-  cancelButton.frame = NSMakeRect(0, buttonY, cancelButton.frame.size.width, 24);
-  [containerView addSubview:cancelButton];
-
-  NSButton *okButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, buttonY, 0, 24)];
-  okButton.buttonType = NSButtonTypeMomentaryPushIn;
-  okButton.bezelStyle = NSBezelStyleSmallSquare;
-  okButton.title = @"确认";
-  okButton.target = self;
-  okButton.action = @selector(dismissConfigSheet:);
+  NSButton *okButton = [NSButton buttonWithTitle:@"确认" target:self action:@selector(dismissConfigSheet:)];
+  okButton.keyEquivalent = @"\r";  // Return 键确认
   [okButton sizeToFit];
-  okButton.frame = NSMakeRect(0, buttonY, okButton.frame.size.width, 24);
+  CGFloat okW = okButton.frame.size.width;
+  CGFloat okH = okButton.frame.size.height;
+  okButton.frame = NSMakeRect(windowWidth - paddingX - okW, buttonY, okW, okH);
   [containerView addSubview:okButton];
 
-  // 居中排列取消 + 确认
-  CGFloat totalButtonsWidth = cancelButton.frame.size.width + buttonGap + okButton.frame.size.width;
-  CGFloat buttonStartX = (windowWidth - totalButtonsWidth) / 2.0;
-  cancelButton.frame = NSMakeRect(buttonStartX, buttonY, cancelButton.frame.size.width, 24);
-  okButton.frame = NSMakeRect(buttonStartX + cancelButton.frame.size.width + buttonGap, buttonY, okButton.frame.size.width, 24);
+  NSButton *cancelButton = [NSButton buttonWithTitle:@"取消" target:self action:@selector(cancelConfigSheet:)];
+  cancelButton.keyEquivalent = @"\e";  // ESC 键取消
+  [cancelButton sizeToFit];
+  CGFloat cancelW = cancelButton.frame.size.width;
+  CGFloat cancelH = cancelButton.frame.size.height;
+  cancelButton.frame = NSMakeRect(windowWidth - paddingX - okW - buttonGap - cancelW, buttonY, cancelW, cancelH);
+  [containerView addSubview:cancelButton];
 
-  // 左下角版本号
+  // 右下角版本号
   NSString *appVersion = [[NSBundle bundleForClass:self.class] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-  NSTextField *versionLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, buttonY + 4, 80, 16)];
-  versionLabel.stringValue = [NSString stringWithFormat:@"v%@", appVersion ?: @"1.0.3"];
+  NSTextField *versionLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 0, 0)];
+  versionLabel.stringValue = [NSString stringWithFormat:@"v%@", appVersion ?: @"1.0.4"];
   versionLabel.font = [NSFont systemFontOfSize:11];
-  versionLabel.textColor = [NSColor colorWithCalibratedWhite:0.4 alpha:1.0];
+  versionLabel.textColor = [NSColor secondaryLabelColor];
   versionLabel.bezeled = NO;
   versionLabel.drawsBackground = NO;
   versionLabel.editable = NO;
   versionLabel.selectable = NO;
+  [versionLabel sizeToFit];
+  // 与「实时预览」标题水平对齐
+  CGFloat previewLabelY = windowHeight - 30 - 22;
+  versionLabel.frame = NSMakeRect(windowWidth - paddingX - versionLabel.frame.size.width,
+                                  previewLabelY + (22 - versionLabel.frame.size.height) / 2.0,
+                                  versionLabel.frame.size.width, versionLabel.frame.size.height);
   [containerView addSubview:versionLabel];
 
   // 设置控件 target/action，实现实时预览联动

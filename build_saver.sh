@@ -11,9 +11,9 @@ echo ""
 
 cd "$PROJECT_DIR/WebViewScreenSaver"
 
-echo "Syncing index.html from project root..."
-# 根目录 index.html 是唯一源文件，Xcode 打包用的是 WebViewScreenSaver/Resources/index.html
-cp "$PROJECT_DIR/index.html" "$PROJECT_DIR/WebViewScreenSaver/Resources/index.html"
+echo "Syncing index.html..."
+# WebViewScreenSaver/index.html 是唯一源文件，Xcode 打包用的是 WebViewScreenSaver/Resources/index.html
+cp "$PROJECT_DIR/WebViewScreenSaver/index.html" "$PROJECT_DIR/WebViewScreenSaver/Resources/index.html"
 
 echo "Cleaning extended attributes from source resources..."
 xattr -cr "$PROJECT_DIR/WebViewScreenSaver/Resources/"

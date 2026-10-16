@@ -97,6 +97,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0 0.05em;
+  transform: translateY(-0.06em);
 }
 
 /* --- Units --- */
@@ -143,13 +144,13 @@ function sanitizeConfig(raw) {
   if (raw && typeof raw === 'object') {
     cfg.birthDate = raw.birthDate instanceof Date ? raw.birthDate : defaultBirthDate;
     cfg.scale = (typeof raw.scale === 'number' && raw.scale >= 0.1 && raw.scale <= 2.0) ? raw.scale : 0.7;
-    cfg.brightness = (typeof raw.brightness === 'number' && raw.brightness >= 0 && raw.brightness <= 1.0) ? raw.brightness : 0.3;
+    cfg.brightness = (typeof raw.brightness === 'number' && raw.brightness >= 0 && raw.brightness <= 1.0) ? raw.brightness : 0.7;
     cfg.screenWidth = (typeof raw.screenWidth === 'number' && raw.screenWidth > 0) ? raw.screenWidth : undefined;
     cfg.screenHeight = (typeof raw.screenHeight === 'number' && raw.screenHeight > 0) ? raw.screenHeight : undefined;
   } else {
     cfg.birthDate = defaultBirthDate;
     cfg.scale = 0.7;
-    cfg.brightness = 0.3;
+    cfg.brightness = 0.7;
   }
   return cfg;
 }
@@ -267,7 +268,7 @@ function computeSizes() {
   mirrorEl.style.height = viewH + 'px';
 
   const isPreview = viewW < 500;
-  const mirrorScale = isPreview ? Math.min(0.6, 200 / viewW) : 1.0;
+  const mirrorScale = isPreview ? Math.min(0.88, 350 / viewW) : 1.0;
   mirrorEl.style.transform = 'scale(' + mirrorScale + ')';
   mirrorEl.style.background = isPreview ? '#1a1a1e' : '#000';
   mirrorEl.style.borderRadius = isPreview ? '4px' : '0';
