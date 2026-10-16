@@ -397,7 +397,6 @@ static NSString *const kTableColumnPreview = @"preview";
   [containerView addSubview:settingsSeparator];
 
   currentY -= 20;
-  // 删除版本号标签，留空一行保持间距
   currentY -= (rowHeight + itemGap);
 
   // --- Birth Date ---
@@ -560,6 +559,18 @@ static NSString *const kTableColumnPreview = @"preview";
   CGFloat buttonStartX = (windowWidth - totalButtonsWidth) / 2.0;
   cancelButton.frame = NSMakeRect(buttonStartX, buttonY, cancelButton.frame.size.width, 24);
   okButton.frame = NSMakeRect(buttonStartX + cancelButton.frame.size.width + buttonGap, buttonY, okButton.frame.size.width, 24);
+
+  // 左下角版本号
+  NSString *appVersion = [[NSBundle bundleForClass:self.class] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+  NSTextField *versionLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(paddingX, buttonY + 4, 80, 16)];
+  versionLabel.stringValue = [NSString stringWithFormat:@"v%@", appVersion ?: @"1.0.3"];
+  versionLabel.font = [NSFont systemFontOfSize:11];
+  versionLabel.textColor = [NSColor colorWithCalibratedWhite:0.4 alpha:1.0];
+  versionLabel.bezeled = NO;
+  versionLabel.drawsBackground = NO;
+  versionLabel.editable = NO;
+  versionLabel.selectable = NO;
+  [containerView addSubview:versionLabel];
 
   // 设置控件 target/action，实现实时预览联动
   self.birthDatePicker.target = self;
