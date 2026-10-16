@@ -24,6 +24,8 @@
 #import "WVSSConfig.h"
 #import "WKWebViewPrivate.h"
 
+#import <os/log.h>
+
 // ScreenSaverDefaults module name.
 static NSString *const kScreenSaverName = @"WebViewScreenSaver";
 
@@ -40,6 +42,8 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
 - (void)watchdogTick:(NSTimer *)timer;
 - (void)diagLog:(NSString *)format, ... NS_FORMAT_FUNCTION(1, 2);
 - (void)diagGeometry:(NSString *)tag;
+- (NSSize)hostReferenceSize;
+- (void)syncSelfFrame;
 
 @end
 
@@ -49,6 +53,8 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   WKWebView *_webView;
   NSInteger _currentIndex;
   BOOL _isPreview;
+  NSUInteger _watchdogTicks;
+  BOOL _pendingReinject;
 }
 
 + (BOOL)performGammaFade {
@@ -145,6 +151,9 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   
   if (_isPreview) return;
 
+  // 先纠正自身 frame 再建 WebView：否则 WebView 会直接按错误的 self.bounds 创建。
+  [self syncSelfFrame];
+
   // Create the webview for the screensaver.
   _webView = [self.class makeWebView:self.bounds];
   _webView.UIDelegate = self;
@@ -159,6 +168,10 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   // 避免父视图 oldSize 退化（0×0）时 WebView 被算成错误尺寸。
   dispatch_async(dispatch_get_main_queue(), ^{
     [self syncWebViewFrame];
+    if (_pendingReinject) {
+      _pendingReinject = NO;
+      [self reInjectConfig];
+    }
   });
 
   [self diagGeometry:@"session-start"];
@@ -166,6 +179,7 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   // 每 2 秒自检一次 WebView frame。屏保一旦退出就无法再抓现场，
   // watchdog 既能在异常出现后 2 秒内自愈，也会把异常几何落盘留证。
   [_watchdogTimer invalidate];
+  _watchdogTicks = 0;
   _watchdogTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
                                                     target:self
                                                   selector:@selector(watchdogTick:)
@@ -178,20 +192,63 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   }
 }
 
-// 强制让 WebView 的 frame 与 self.bounds 一致。
+// 强制让自身 frame 与 WebView frame 回到正确几何。
 //
-// 只靠 autoresizingMask 是不够的：当 superview 的旧尺寸退化为 0×0（显示器唤醒、
-// 分辨率切换、外接屏插拔、Space 切换）时，AppKit 计算 autoresizing 需要除以旧尺寸，
-// 结果 WebView 可能被算成屏幕的像素尺寸（如 2880×1800）而非 points（1440×900）。
-// ScreenSaverView 是非 flipped 坐标系（原点左下），此时可见区域只剩 WebView 的左下象限，
+// 只靠 autoresizingMask 是不够的：当 superview 的旧尺寸退化为 0×0（宿主先建空视图
+// 再撑到全屏、显示器唤醒、分辨率切换、外接屏插拔、Space 切换）时，AppKit 无法按
+// 比例换算，会把全部增量加到子视图，于是 1440×900 被撑成 2880×1800。
+// ScreenSaverView 是非 flipped 坐标系（原点左下），此时可见区域只剩左下象限，
 // 页面居中内容会落到屏幕右上角并被裁掉四分之三。
 - (void)syncWebViewFrame {
-  if (_isPreview || !_webView) return;
+  if (_isPreview) return;
+  // 先纠正自身 frame，再对齐 WebView：否则 self.bounds 本身就是错的时，
+  // webView.frame == self.bounds 会被判定为"正常"，自检彻底静默。
+  [self syncSelfFrame];
+  if (!_webView) return;
   if (!NSEqualRects(_webView.frame, self.bounds)) {
     [self diagLog:@"FIX webFrame %@ -> bounds %@",
           NSStringFromRect(_webView.frame), NSStringFromRect(self.bounds)];
     _webView.frame = self.bounds;
   }
+}
+
+// 权威参考尺寸（points）：屏保视图必须填满父视图，因此优先取 superview；
+// 父视图尚未挂上时退回窗口内容区 / 窗口 / 屏幕。
+- (NSSize)hostReferenceSize {
+  NSSize s = self.superview.bounds.size;
+  if (s.width > 1.0 && s.height > 1.0) return s;
+  if (self.window) {
+    s = self.window.contentView.bounds.size;
+    if (s.width > 1.0 && s.height > 1.0) return s;
+    s = self.window.frame.size;
+    if (s.width > 1.0 && s.height > 1.0) return s;
+  }
+  NSScreen *screen = self.window.screen ?: NSScreen.mainScreen;
+  return screen.frame.size;
+}
+
+// 纠正自身 frame。实测机制：宿主先把父视图建成 0×0，随后撑到全屏；此时 AppKit
+// 无法按比例换算 autoresizing（oldSize 为 0），退化为"把全部增量加到子视图"，
+// 于是 1440×900 的父视图会把我们撑成 2880×1800——数值恰好等于像素尺寸，但那是
+// scale=2 的巧合，非 Retina 外接屏上同样会翻倍，因此不能依赖倍率判断。
+// 这里只认一条不变量：屏保视图必须与参考尺寸等大。只改 size、保留 origin。
+- (void)syncSelfFrame {
+  if (_isPreview) return;
+  NSSize ref = [self hostReferenceSize];
+  if (ref.width < 1.0 || ref.height < 1.0) return;
+
+  NSSize cur = self.bounds.size;
+  if (fabs(cur.width - ref.width) < 0.5 && fabs(cur.height - ref.height) < 0.5) return;
+
+  [self diagLog:@"FIX selfFrame %@ -> %.0fx%.0f (superview=%@ backing=%.1f)",
+        NSStringFromRect(self.frame), ref.width, ref.height,
+        NSStringFromRect(self.superview.bounds), self.window.backingScaleFactor];
+  NSRect f = self.frame;
+  f.size = ref;
+  self.frame = f;
+  // 注入前端的 screenWidth/screenHeight 取自 self.bounds，纠正后必须重新注入，
+  // 否则页面仍按旧的错误尺寸布局。
+  _pendingReinject = YES;
 }
 
 // 当屏幕保护视图被调整大小时（如显示器分辨率变化、外接显示器插拔、合盖唤醒等），
@@ -219,6 +276,19 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
 // watchdog：周期性自检 frame，异常即纠正并留证。
 - (void)watchdogTick:(NSTimer *)timer {
   [self syncWebViewFrame];
+
+  if (_pendingReinject) {
+    _pendingReinject = NO;
+    [self reInjectConfig];
+  }
+
+  // 每 30 秒落一次几何心跳。异常若从会话一开始就存在（宿主建视图即错），
+  // 只有心跳能证明"数值从头到尾没变过"，排除是中途被改坏。
+  _watchdogTicks++;
+  if (_watchdogTicks % 15 == 0) {
+    [self diagGeometry:[NSString stringWithFormat:@"heartbeat tick=%lu",
+                                                 (unsigned long)_watchdogTicks]];
+  }
 }
 
 // 记录一次完整几何快照：自身 bounds、WebView frame、窗口、屏幕与 backing scale。
@@ -226,10 +296,13 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
 - (void)diagGeometry:(NSString *)tag {
   if (_isPreview) return;
   NSScreen *screen = self.window.screen ?: NSScreen.mainScreen;
-  [self diagLog:@"%@ bounds=%@ webFrame=%@ window=%@ screen=%@ backing=%.1f",
+  [self diagLog:@"%@ bounds=%@ webFrame=%@ superview=%@ ref=%.0fx%.0f window=%@ screen=%@ backing=%.1f",
         tag,
         NSStringFromRect(self.bounds),
         NSStringFromRect(_webView ? _webView.frame : NSZeroRect),
+        NSStringFromRect(self.superview.bounds),
+        [self hostReferenceSize].width,
+        [self hostReferenceSize].height,
         NSStringFromRect(self.window.frame),
         NSStringFromRect(screen.frame),
         self.window.backingScaleFactor];
@@ -255,6 +328,11 @@ static NSString *const kScreenSaverName = @"WebViewScreenSaver";
   fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS";
   NSString *line = [NSString stringWithFormat:@"%@ %@\n",
                     [fmt stringFromDate:[NSDate date]], message];
+
+  // 同时镜像到统一日志。屏保进程被沙盒关在容器里，磁盘日志位于
+  // ~/Library/Containers/.../Data/Library/Logs，读取需要「完全磁盘访问权限」；
+  // 而 `log show` 无需任何授权即可读，因此这里双写，保证取证通道永远可用。
+  os_log(OS_LOG_DEFAULT, "[LifeClock] %{public}@", message);
 
   NSFileManager *fm = NSFileManager.defaultManager;
   NSString *path = [self diagLogPath];

@@ -25,8 +25,15 @@ xcodebuild -project WebViewScreenSaver.xcodeproj -target LifeClock -configuratio
   CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO build
 
 echo "Cleaning extended attributes from build output for signing..."
-xattr -cr "$BUILD_DIR/$SAVER_NAME"
-codesign --force --sign - --timestamp=none --generate-entitlement-der "$BUILD_DIR/$SAVER_NAME"
+# 项目位于 iCloud 同步目录下，bundle 目录会带上 com.apple.FinderInfo 与
+# com.apple.fileprovider.fpfs#P，后者无法被 xattr -c 清除，会导致 codesign 报
+# "resource fork, Finder information, or similar detritus not allowed"。
+# 因此先拷到 /tmp 这个非同步目录再清理并签名。
+STAGE_DIR=$(mktemp -d /tmp/lifeclock-sign.XXXXXX)
+cp -R "$BUILD_DIR/$SAVER_NAME" "$STAGE_DIR/$SAVER_NAME"
+xattr -cr "$STAGE_DIR/$SAVER_NAME"
+codesign --force --sign - --timestamp=none --generate-entitlement-der "$STAGE_DIR/$SAVER_NAME"
+codesign --verify --verbose=1 "$STAGE_DIR/$SAVER_NAME"
 
 echo ""
 echo "Build succeeded!"
@@ -34,7 +41,8 @@ echo ""
 
 echo "Copying to $OUTPUT_DIR..."
 rm -rf "$OUTPUT_DIR/$SAVER_NAME"
-cp -R "$BUILD_DIR/LifeClock.saver" "$OUTPUT_DIR/$SAVER_NAME"
+cp -R "$STAGE_DIR/$SAVER_NAME" "$OUTPUT_DIR/$SAVER_NAME"
+rm -rf "$STAGE_DIR"
 
 # 注意：不要在此处再覆盖 index.html —— 那会让上面的 codesign 失效。
 # index.html 已在构建前同步，由 Xcode 打进 bundle 并一起签名。

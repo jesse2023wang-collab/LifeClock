@@ -1,5 +1,20 @@
 # LifeClock 版本日志
 
+## v1.0.3 (2026-10-15)
+
+### Bug 修复
+- **补上 v1.0.2 的盲点：`self.bounds` 自身被撑成像素尺寸时自检完全静默**。v1.0.2 的 `syncWebViewFrame` 只做 `_webView.frame = self.bounds`，当 `self.bounds` 本身就是错的，`webView.frame == self.bounds` 会被判定为"正常"，watchdog 永不触发；同时 `reInjectConfig` 把这个错误尺寸当作 `screenWidth/screenHeight` 注入前端，`resolveViewport()` 的交叉校验也一并失效，页面按 2880×1800 布局，居中内容正好落在可见区（1440×900）右上角顶点并被裁掉四分之三
+- **根因已由统一日志实测坐实：AppKit autoresizing 的加法退化**。宿主先把父视图建成 `0×0`，随后撑到 `1440×900`；此时 `resizeWithOldSuperviewSize:` 拿到的 `oldSize` 为 `0×0`，无法按比例换算，退化为"把全部增量加到子视图"，于是 `1440+1440 = 2880`、`900+900 = 1800`。数值恰好等于像素尺寸只是 scale=2 的巧合，非 Retina 外接屏上同样会翻倍，因此**不能依赖倍率判断**
+- **新增 `syncSelfFrame`**：只认一条不变量——屏保视图必须与权威参考尺寸（优先 `superview.bounds`，退回窗口内容区 / 窗口 / 屏幕）等大；不等即纠正自身 size（保留 origin，预览态不动），并置位 `_pendingReinject` 触发配置重注入
+
+### 工程改进
+- **诊断日志双写到统一日志（os_log）**：磁盘日志位于屏保沙盒容器 `~/Library/Containers/com.apple.ScreenSaver.Engine.legacyScreenSaver/Data/Library/Logs/LifeClock/diag.log`，读取需要「完全磁盘访问权限」（`Read` / `cp` / Finder / 用户终端四条路径均被 TCC 拒绝）；改为同时 `os_log`，`log show` 无需任何授权即可取证
+- **几何快照增加 `superview=` 与 `ref=` 字段**：可直接看出是宿主给错尺寸还是 autoresizing 算错
+- **30 秒几何心跳**：`heartbeat tick=N` 周期落盘，用于区分"异常从会话开始就存在"与"运行中途被改坏"
+- **`build_saver.sh` 移出 iCloud 同步目录再签名**：项目位于 `~/Documents` 下，bundle 会带上 `com.apple.fileprovider.fpfs#P`（`xattr -cr` 无法清除），导致 `codesign` 报 `resource fork, Finder information, or similar detritus not allowed`；改为先在 `/tmp` 暂存目录清理并签名，再拷回项目根目录
+
+---
+
 ## v1.0.2 (2026-10-15)
 
 ### Bug 修复

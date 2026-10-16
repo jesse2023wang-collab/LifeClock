@@ -144,6 +144,18 @@ LifeClock/
 
 ## 版本日志
 
+### v1.0.3 (2026-10-15)
+
+#### Bug 修复
+- **补上 v1.0.2 的盲点**：v1.0.2 只校验 `webView.frame == self.bounds`，一旦 `self.bounds` 本身就是错的，自检判定"正常"、watchdog 静默、注入前端的 `screenWidth` 同样是错的，两道防线全废
+- **真正根因（统一日志实测坐实）**：AppKit autoresizing 的加法退化。宿主先把父视图建成 `0×0` 再撑到 `1440×900`，`oldSize = 0×0` 时无法按比例换算，退化为把全部增量加到子视图 → `1440+1440 = 2880`、`900+900 = 1800`。数值恰好像素尺寸只是 scale=2 的巧合，非 Retina 外接屏同样翻倍，故不能依赖倍率判断
+- **新增 `syncSelfFrame`**：只认不变量「屏保视图必须与权威参考尺寸（优先 `superview.bounds`）等大」，不等即纠正自身 size 并触发配置重注入
+
+#### 工程改进
+- **诊断日志双写到 `os_log`**：容器内的 `diag.log` 读取需要「完全磁盘访问权限」，`log show` 则无需授权，取证通道不再被 TCC 卡死
+- **几何快照增加 `superview=` / `ref=`**，并新增 30 秒心跳，可区分"一开始就错"与"中途被改坏"
+- **`build_saver.sh` 先在 `/tmp` 暂存目录签名再拷回**：项目位于 iCloud 同步目录下，bundle 带的 `com.apple.fileprovider.fpfs#P` 无法清除，会让 `codesign` 报 detritus 错误
+
 ### v1.0.2 (2026-10-15)
 
 #### Bug 修复
